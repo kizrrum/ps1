@@ -7,6 +7,18 @@ $ServiceName = "Spooler"            # Service to use for uninstall (e.g., Spoole
 $MaxWait = 90                       # Maximum wait time for uninstall (seconds)
 $CheckInterval = 5                  # Check interval (seconds)
 
+# --- Check for administrative privileges ---
+function Test-Admin {
+    $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($currentUser)
+    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+if (-not (Test-Admin)) {
+    Write-Error "This script requires administrative privileges. Please run as Administrator."
+    exit
+}
+
 # --- Function: Check if product is installed ---
 function Test-ProductInstalled {
     param(
